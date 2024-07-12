@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from ldm.modules.attention import FeedForward
 
-from scripts.modules.utils import default, exists
+from modules.utils import default, exists
 
 try:
     import xformers

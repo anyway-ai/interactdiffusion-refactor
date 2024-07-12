@@ -7,8 +7,8 @@ from ldm.modules.diffusionmodules.openaimodel import UNetModel
 import itertools
 from natsort import natsorted
 import numpy as np
-from modules import shared
-from scripts.modules.model import GatedSelfAttentionDense, FourierEmbedder
+#from modules import shared
+from modules.model import GatedSelfAttentionDense, FourierEmbedder
 
 import logging 
 
