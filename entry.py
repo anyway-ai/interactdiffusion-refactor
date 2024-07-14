@@ -5,11 +5,11 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 
 import torch
-from scripts.interactdiffusion_infotext import Infotext
+from interactdiffusion_infotext import Infotext
 
-from scripts.interactdiffusion_pluggable import PluggableInteractDiffusion
-from scripts import interactdiffusion
-from scripts.modules.utils import rescale_js, binarize, center_crop, sized_center_fill,\
+from interactdiffusion_pluggable import PluggableInteractDiffusion
+import interactdiffusion
+from modules.utils import rescale_js, binarize, center_crop, sized_center_fill,\
       sized_center_mask
 import numpy as np
 import cv2

@@ -1,23 +1,10 @@
-from collections import OrderedDict
-
 import torch
 from torch import nn
 from ldm.modules.attention import SpatialTransformer
 from ldm.modules.diffusionmodules.openaimodel import UNetModel
 import itertools
-from natsort import natsorted
 import numpy as np
-#from modules import shared
 from modules.model import GatedSelfAttentionDense, FourierEmbedder
-
-import logging 
-
-try:
-    import xformers
-    import xformers.ops
-    XFORMERS_IS_AVAILBLE = True
-except:
-    XFORMERS_IS_AVAILBLE = False
 
 
 class AbsolutePositionalEmbedding(nn.Module):
