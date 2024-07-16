@@ -193,6 +193,7 @@ class ProxyUNetModel(object):
 
 
 
+# used for filtering unet blocks according to interactdiff model blocks
 known_block_prefixes = [
     'input_blocks.0.',
     'input_blocks.1.',
@@ -246,19 +247,24 @@ class PluggableInteractDiffusion:
         self.stage_one = 0.8
         self.stage_two = 0.0
 
+        # don't need a separate dict of only keys
         interactdiffusion_state_dict_keys = interactdiffusion_state_dict.keys()  # try without sorted
         interactdiffusion_sorted_dict = interactdiffusion_state_dict
 
-        
-        # Adjust the block access according to the structure of UNet2DConditionModel
-        #for block_idx, unet_block in enumerate(itertools.chain(ori_unet.down_blocks, [ori_unet.mid_block], ori_unet.up_blocks)):
-        keys = ori_unet.keys()
-        blocks = [key for key in keys if key.startswith("down_blocks")] + [key for key in keys if key.startswith("mid_blocks")] + [key for key in keys if key.startswith("up_blocks")]
-        for block_idx, unet_block in enumerate(itertools.chain(ori_unet.down_blocks, [ori_unet.mid_block], ori_unet.up_blocks)):
+        # iterate through all of the blocks of the unet
+        for block_idx, unet_block in enumerate(itertools.chain(ori_unet.input_blocks, [ori_unet.middle_block], ori_unet.output_blocks)):
+
+            # obtain interactdiffknown_block_prefixes block prefix according to unet block number
+            # NOTE: this mandates that the number of unet blocks == number of interact diff blocks, won't read any more
             cur_block_prefix = known_block_prefixes[block_idx]
+            
+            # obtain the state dict key, values of interactdiff block if it is in known_block_prefixes
             cur_block_fuse_state_dict = {key: value for key, value in interactdiffusion_sorted_dict.items() if key.startswith(cur_block_prefix)}
 
+            # essentially, up until here, all we've done is obtain a singular interactdiff block that matches with respective unet block 
+
             if len(cur_block_fuse_state_dict) != 0:
+                # mandate only 17 layers inside block, as per interactdiff model
                 if len(cur_block_fuse_state_dict) != 17:
                     raise Exception(f'State dict for block {cur_block_prefix} is not correct, have {len(cur_block_fuse_state_dict)} items')
                 verify_cur_block_fuse_state_dict = cur_block_fuse_state_dict
@@ -270,15 +276,17 @@ class PluggableInteractDiffusion:
                 # trim state_dict keys
                 key_after_fuser_pointer = list(cur_block_fuse_state_dict.keys())[0].index('fuser.') + len('fuser.')
                 cur_block_fuse_state_dict = {key[key_after_fuser_pointer:]: value for key, value in cur_block_fuse_state_dict.items()}
+
             else:
                 continue
 
             for module in unet_block.modules():
-                if isinstance(module, SpatialTransformer):
+                if type(module) is SpatialTransformer:
                     spatial_transformer = module
                     for basic_transformer_block in spatial_transformer.transformer_blocks:
                         cur_proxy_block = ProxyBasicTransformerBlock(self, basic_transformer_block)
                         cur_proxy_block.initialize_fuser(cur_block_fuse_state_dict)
+                        # cur_proxy_block.apply_to()
                         self.gated_self_attention_modules.append(cur_proxy_block.fuser)
                         self.proxy_blocks.append(cur_proxy_block)
 
@@ -288,9 +296,10 @@ class PluggableInteractDiffusion:
                 raise Exception(f'State dict for position_net is not correct. We do not support SDXL at the moment, please try to load with SD 1.x checkpoints and restart webui. The key trying to load is {key}.')
 
         # trim state_dict keys
-        key_after_position_net_pointer = list(interactdiffusion_sorted_dict.keys())[0].index('position_net.') + len('position_net.')
+        key_after_position_net_pointer = list(interactdiffusion_sorted_dict.keys())[0].index('position_net.') + len(
+            'position_net.')
         position_net_state_dict = {key[key_after_position_net_pointer:]: value for key, value in interactdiffusion_sorted_dict.items()}
-
+        
         self.position_net = HOIPositionNet(in_dim=768, out_dim=768)
         self.position_net.load_state_dict(position_net_state_dict)
 
@@ -302,6 +311,7 @@ class PluggableInteractDiffusion:
         text_embeddings = torch.zeros(max_objs, 768).unsqueeze(0)
         self.empty_objs = self.position_net(boxes, boxes, masks, text_embeddings, text_embeddings, text_embeddings)
 
+
     def update_stages(self, strength, stage_one, stage_two):
         self.strength = strength
         self.stage_one = stage_one
@@ -312,7 +322,7 @@ class PluggableInteractDiffusion:
                                       subject_text_embeddings, object_text_embeddings, action_text_embeddings)
         self.batch_size = batch_size
         for module in self.gated_self_attention_modules:
-            module.to(device=shared.device, dtype=shared.sd_model.dtype)
+            module.to(device='cuda', dtype=np.float16)
 
     def attach_all(self):
         for proxy_block in self.proxy_blocks:
