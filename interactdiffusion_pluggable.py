@@ -90,12 +90,11 @@ class HOIPositionNet(nn.Module):
         # replace padding with learnable null embedding
         subject_positive_embeddings = subject_positive_embeddings * masks + (1 - masks) * positive_null
         object_positive_embeddings = object_positive_embeddings * masks + (1 - masks) * positive_null
+        action_positive_embeddings = action_positive_embeddings * masks + (1 - masks) * action_null
 
         subject_xyxy_embedding = subject_xyxy_embedding * masks + (1 - masks) * xyxy_null
         object_xyxy_embedding = object_xyxy_embedding * masks + (1 - masks) * xyxy_null
         action_xyxy_embedding = action_xyxy_embedding * masks + (1 - masks) * xyxy_null
-
-        action_positive_embeddings = action_positive_embeddings * masks + (1 - masks) * action_null
 
         objs_subject = self.linears(torch.cat([subject_positive_embeddings, subject_xyxy_embedding], dim=-1))
         objs_object = self.linears(torch.cat([object_positive_embeddings, object_xyxy_embedding], dim=-1))
@@ -172,6 +171,10 @@ class ProxyUNetModel(object):
     def __getattr__(self, attr):
         if attr not in ['org_module', 'org_forward', 'fuser', 'attached', 'controller', 'objs'] and self.attached:
             return getattr(self.org_module, attr)
+        
+    def forward(self, x, timesteps=None, context=None, y=None, **kwargs):
+        self.controller.unet_signal(timesteps=timesteps, x=x)
+        return self.org_forward(x, timesteps=timesteps, context=context, y=y, **kwargs)
 
     def apply_to(self):
         if self.org_forward is not None:
@@ -187,9 +190,7 @@ class ProxyUNetModel(object):
         self.org_forward = None
         self.attached = False
 
-    def forward(self, x, timesteps=None, context=None, y=None, **kwargs):
-        self.controller.unet_signal(timesteps=timesteps, x=x)
-        return self.org_forward(x, timesteps=timesteps, context=context, y=y, **kwargs)
+    
 
 
 
@@ -212,8 +213,8 @@ known_block_prefixes = [
     'output_blocks.1.',
     'output_blocks.2.',
     'output_blocks.3.',
-    'output_blocks.4.',
     'output_blocks.5.',
+    'output_blocks.4.',
     'output_blocks.6.',
     'output_blocks.7.',
     'output_blocks.8.',
@@ -251,23 +252,19 @@ class PluggableInteractDiffusion:
         interactdiffusion_state_dict_keys = interactdiffusion_state_dict.keys()  # try without sorted
         interactdiffusion_sorted_dict = interactdiffusion_state_dict
 
+        prev = interactdiffusion_sorted_dict.copy()
         # iterate through all of the blocks of the unet
         for block_idx, unet_block in enumerate(itertools.chain(ori_unet.input_blocks, [ori_unet.middle_block], ori_unet.output_blocks)):
-
-            # obtain interactdiffknown_block_prefixes block prefix according to unet block number
-            # NOTE: this mandates that the number of unet blocks == number of interact diff blocks, won't read any more
+            
             cur_block_prefix = known_block_prefixes[block_idx]
             
-            # obtain the state dict key, values of interactdiff block if it is in known_block_prefixes
             cur_block_fuse_state_dict = {key: value for key, value in interactdiffusion_sorted_dict.items() if key.startswith(cur_block_prefix)}
 
-            # essentially, up until here, all we've done is obtain a singular interactdiff block that matches with respective unet block 
-
             if len(cur_block_fuse_state_dict) != 0:
-                # mandate only 17 layers inside block, as per interactdiff model
                 if len(cur_block_fuse_state_dict) != 17:
                     raise Exception(f'State dict for block {cur_block_prefix} is not correct, have {len(cur_block_fuse_state_dict)} items')
                 verify_cur_block_fuse_state_dict = cur_block_fuse_state_dict
+
                 for key, value in verify_cur_block_fuse_state_dict.items():
                     if not key.startswith(cur_block_prefix):
                         raise Exception(f'State dict for block {cur_block_prefix} is not correct. Current key is {key}')
@@ -276,9 +273,6 @@ class PluggableInteractDiffusion:
                 # trim state_dict keys
                 key_after_fuser_pointer = list(cur_block_fuse_state_dict.keys())[0].index('fuser.') + len('fuser.')
                 cur_block_fuse_state_dict = {key[key_after_fuser_pointer:]: value for key, value in cur_block_fuse_state_dict.items()}
-
-            else:
-                continue
 
             for module in unet_block.modules():
                 if type(module) is SpatialTransformer:
@@ -298,6 +292,7 @@ class PluggableInteractDiffusion:
         # trim state_dict keys
         key_after_position_net_pointer = list(interactdiffusion_sorted_dict.keys())[0].index('position_net.') + len(
             'position_net.')
+        
         position_net_state_dict = {key[key_after_position_net_pointer:]: value for key, value in interactdiffusion_sorted_dict.items()}
         
         self.position_net = HOIPositionNet(in_dim=768, out_dim=768)
@@ -316,6 +311,7 @@ class PluggableInteractDiffusion:
         self.strength = strength
         self.stage_one = stage_one
         self.stage_two = stage_two
+
     def update_objs(self, subject_boxes, object_boxes, masks,
                     subject_text_embeddings, object_text_embeddings, action_text_embeddings, batch_size):
         self.objs = self.position_net(subject_boxes, object_boxes, masks,

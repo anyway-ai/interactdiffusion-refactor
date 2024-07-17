@@ -3,3 +3,5 @@ torchvision
 natsort
 einops
 opencv-python
+xformers
+omegaconf
