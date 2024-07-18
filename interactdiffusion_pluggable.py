@@ -252,6 +252,8 @@ class PluggableInteractDiffusion:
         interactdiffusion_state_dict_keys = interactdiffusion_state_dict.keys()  # try without sorted
         interactdiffusion_sorted_dict = interactdiffusion_state_dict
 
+        print(interactdiffusion_state_dict_keys)
+
         prev = interactdiffusion_sorted_dict.copy()
         # iterate through all of the blocks of the unet
         for block_idx, unet_block in enumerate(itertools.chain(ori_unet.input_blocks, [ori_unet.middle_block], ori_unet.output_blocks)):
@@ -259,7 +261,12 @@ class PluggableInteractDiffusion:
             cur_block_prefix = known_block_prefixes[block_idx]
             
             cur_block_fuse_state_dict = {key: value for key, value in interactdiffusion_sorted_dict.items() if key.startswith(cur_block_prefix)}
-
+            print("\n")
+            print(block_idx)
+            for key in cur_block_fuse_state_dict.keys():
+                    print(key)
+            print("\n")
+            
             if len(cur_block_fuse_state_dict) != 0:
                 if len(cur_block_fuse_state_dict) != 17:
                     raise Exception(f'State dict for block {cur_block_prefix} is not correct, have {len(cur_block_fuse_state_dict)} items')
@@ -269,6 +276,11 @@ class PluggableInteractDiffusion:
                     if not key.startswith(cur_block_prefix):
                         raise Exception(f'State dict for block {cur_block_prefix} is not correct. Current key is {key}')
                     del interactdiffusion_sorted_dict[key]
+
+                
+                for key in cur_block_fuse_state_dict.keys():
+                    print(key)
+                print("\n")
 
                 # trim state_dict keys
                 key_after_fuser_pointer = list(cur_block_fuse_state_dict.keys())[0].index('fuser.') + len('fuser.')
@@ -286,6 +298,7 @@ class PluggableInteractDiffusion:
 
         verify_position_net_state_dict = interactdiffusion_sorted_dict
         for key, value in verify_position_net_state_dict.items():
+            print(key)
             if not key.startswith('position_net.'):
                 raise Exception(f'State dict for position_net is not correct. We do not support SDXL at the moment, please try to load with SD 1.x checkpoints and restart webui. The key trying to load is {key}.')
 

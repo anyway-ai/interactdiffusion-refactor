@@ -1,5 +1,6 @@
 import torch
 from interactdiffusion_pluggable import PluggableInteractDiffusion
+from pluggable import InteractDiffusion
 
 from ldm.modules.diffusionmodules.openaimodel import UNetModel
 
@@ -32,4 +33,7 @@ for net in keys:
 print(len(keys))
 
 """
-pluggable = PluggableInteractDiffusion(model, interactdiff_model)
+
+pluggable = InteractDiffusion(model, interactdiff_model)
+
+#pluggable = PluggableInteractDiffusion(model, interactdiff_model)
